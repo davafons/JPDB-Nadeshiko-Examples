@@ -50,7 +50,7 @@
         currentlyPlayingAudio: false
     };
 
-
+    const apikey = ""
     // IndexedDB Manager
     const IndexedDBManager = {
         MAX_ENTRIES: 100000000,
@@ -249,7 +249,7 @@
                             data: JSON.stringify({ query: searchVocab }),
                             headers:
                             {
-                                "X-API-Key":"6bdf791b-daf9-40b9-b3bc-412c0f6e78ba",
+                                "X-API-Key":apikey,
                                 "Content-Type": "application/json"
                             },
                             onload: async function(response) {

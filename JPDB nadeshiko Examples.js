@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         JPDB Immersion Kit Examples
+// @name         JPDB Nadeshiko Examples
 // @version      1.20
-// @description  Embeds anime images & audio examples into JPDB review and vocabulary pages using Immersion Kit's API. Compatible only with TamperMonkey.
+// @description  Embeds anime images & audio examples into JPDB review and vocabulary pages using Nadeshiko's API. Compatible only with TamperMonkey.
 // @author       awoo
 // @namespace    jpdb-immersion-kit-examples
 // @match        https://jpdb.io/review*

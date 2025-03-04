@@ -3,7 +3,7 @@
 // @version      1.20
 // @description  Embeds anime images & audio examples into JPDB review and vocabulary pages using Nadeshiko's API. Compatible only with TamperMonkey.
 // @author       awoo
-// @namespace    jpdb-immersion-kit-examples
+// @namespace    jpdb-nadeshiko-examples
 // @match        https://jpdb.io/review*
 // @match        https://jpdb.io/vocabulary/*
 // @match        https://jpdb.io/kanji/*
@@ -13,8 +13,6 @@
 // @grant        GM_addElement
 // @grant        GM_xmlhttpRequest
 // @license      MIT
-// @downloadURL https://update.greasyfork.org/scripts/507408/JPDB%20Immersion%20Kit%20Examples.user.js
-// @updateURL https://update.greasyfork.org/scripts/507408/JPDB%20Immersion%20Kit%20Examples.meta.js
 // ==/UserScript==
 
 (function() {

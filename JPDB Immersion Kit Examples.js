@@ -8,7 +8,7 @@
 // @match        https://jpdb.io/vocabulary/*
 // @match        https://jpdb.io/kanji/*
 // @match        https://jpdb.io/search*
-// @connect      immersionkit.com
+// @connect      api.brigadasos.xyz
 // @connect      linodeobjects.com
 // @grant        GM_addElement
 // @grant        GM_xmlhttpRequest
@@ -149,29 +149,8 @@
 
                     // Transform the JSON object to slim it down
                     let slimData = {};
-                    if (data && data.data) {
-                        slimData.data = data.data.map(item => {
-                            const slimItem = {};
-
-                            // Keep the category_count section
-                            if (item.category_count) {
-                                slimItem.category_count = item.category_count;
-                            }
-
-                            // Slim down the examples section
-                            if (item.examples && Array.isArray(item.examples)) {
-                                const slimExamples = item.examples.map(example => ({
-                                    image_url: example.image_url,
-                                    sound_url: example.sound_url,
-                                    sentence: example.sentence,
-                                    translation: example.translation,
-                                    deck_name: example.deck_name
-                                }));
-                                slimItem.examples = slimExamples;
-                            }
-
-                            return slimItem;
-                        });
+                    if (data) {
+                        slimData = data
                     } else {
                         console.error('Data does not contain expected structure. Cannot slim down.');
                         resolve();
@@ -239,8 +218,8 @@
 
 
         return new Promise(async (resolve, reject) => {
-            const searchVocab = exactSearch ? `「${vocab}」` : vocab;
-            const url = `https://api.immersionkit.com/look_up_dictionary?keyword=${encodeURIComponent(searchVocab)}&sort=shortness&min_length=${CONFIG.MINIMUM_EXAMPLE_LENGTH}`;
+            const searchVocab = vocab;
+            const url = `https://api.brigadasos.xyz/api/v1/search/media/sentence`;
             const maxRetries = 5;
             let attempt = 0;
 
@@ -257,24 +236,30 @@
                 try {
                     const db = await IndexedDBManager.open();
                     const cachedData = await IndexedDBManager.get(db, searchVocab);
-                    if (cachedData && Array.isArray(cachedData.data) && cachedData.data.length > 0) {
+                    if (cachedData && Array.isArray(cachedData) && cachedData.length > 0) {
                         console.log('Data retrieved from IndexedDB');
-                        state.examples = cachedData.data[0].examples;
+                        state.examples = cachedData;
                         state.apiDataFetched = true;
                         resolve();
                     } else {
                         console.log(`Calling API for: ${searchVocab}`);
                         GM_xmlhttpRequest({
-                            method: "GET",
+                            method: "POST",
                             url: url,
+                            data: JSON.stringify({ query: searchVocab }),
+                            headers:
+                            {
+                                "X-API-Key":"6bdf791b-daf9-40b9-b3bc-412c0f6e78ba",
+                                "Content-Type": "application/json"
+                            },
                             onload: async function(response) {
                                 if (response.status === 200) {
-                                    const jsonData = parseJSON(response.responseText);
+                                    const jsonData = parseJSON(response.response).sentences;
                                     console.log("API JSON Received");
                                     console.log(url);
                                     const validationError = validateApiResponse(jsonData);
                                     if (!validationError) {
-                                        state.examples = jsonData.data[0].examples;
+                                        state.examples = jsonData;
                                         state.apiDataFetched = true;
                                         await IndexedDBManager.save(db, searchVocab, jsonData);
                                         resolve();
@@ -282,7 +267,7 @@
                                         attempt++;
                                         if (attempt < maxRetries) {
                                             console.log(`Validation error: ${validationError}. Retrying... (${attempt}/${maxRetries})`);
-                                            setTimeout(fetchData, 2000); // Add a 2-second delay before retrying
+                                            setTimeout(fetchData, 5000); // Add a 5-second delay before retrying
                                         } else {
                                             reject(`Invalid API response after ${maxRetries} attempts: ${validationError}`);
                                             state.error = true;
@@ -321,17 +306,13 @@
         if (!jsonData) {
             return 'Not a valid JSON';
         }
-        if (!jsonData.data || !jsonData.data[0] || !jsonData.data[0].examples) {
-            return 'Missing required data fields';
-        }
-
-        const categoryCount = jsonData.data[0].category_count;
+        const categoryCount = jsonData.length;
         if (!categoryCount) {
             return 'Missing category count';
         }
 
         // Check if all category counts are zero
-        const allZero = Object.values(categoryCount).every(count => count === 0);
+        const allZero = categoryCount == 0
         if (allZero) {
             return 'Blank API';
         }
@@ -785,15 +766,20 @@
     }
 
     function renderImageAndPlayAudio(vocab, shouldAutoPlaySound) {
+        if (state.apiDataFetched == false){
+            console.log("No data");
+            return;
+        }
         const example = state.examples[state.currentExampleIndex] || {};
-        const imageUrl = example.image_url || null;
-        const soundUrl = example.sound_url || null;
-        const sentence = example.sentence || null;
-        const translation = example.translation || null;
-        const deck_name = example.deck_name || null;
+        const imageUrl = example.media_info.path_image || null;
+        const soundUrl = example.media_info.path_audio || null;
+        const sentence = example.segment_info.content_jp || null;
+        const translation = example.segment_info.content_en || null;
+        const deck_name = example.basic_info.name_anime_romaji || null;
         const storedValue = localStorage.getItem(state.vocab);
         const isBlacklisted = storedValue && storedValue.split(',').length > 1 && parseInt(storedValue.split(',')[1], 10) === 2;
-
+        console.log("sentence",sentence);
+        console.log("translation",translation);
         // Remove any existing container
         removeExistingContainer();
         if (!shouldRenderContainer()) return;
@@ -1097,7 +1083,7 @@
         if (existingNavigationDiv) existingNavigationDiv.remove();
 
         const reviewUrlPattern = /https:\/\/jpdb\.io\/review(#a)?$/;
-
+        if (state.apiDateFetched == false) return;
         renderImageAndPlayAudio(state.vocab, !reviewUrlPattern.test(window.location.href));
         preloadImages();
     }
@@ -1803,7 +1789,13 @@
         }
     }
 
-
+    function shuffle(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]]; // Swap elements
+        }
+        return array;
+    }
     //MAIN FUNCTIONS=====================================================================================================================
     function onPageLoad() {
         // Initialize state and determine vocabulary based on URL
@@ -1814,7 +1806,6 @@
 
         // Proceed only if the machine translation frame is not present
         if (!machineTranslationFrame) {
-
             //display embed for first time with loading text
             embedImageAndPlayAudio();
             setPageWidth();
@@ -1843,6 +1834,8 @@
         if (state.vocab && !state.apiDataFetched) {
             getImmersionKitData(state.vocab, state.exactSearch)
                 .then(() => {
+                state.examples = shuffle(state.examples)
+                console.log("PageLoad",state)
                 preloadImages();
                 if (!/https:\/\/jpdb\.io\/review(#a)?$/.test(url)) {
                     embedImageAndPlayAudio();

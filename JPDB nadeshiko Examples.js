@@ -48,7 +48,7 @@
         currentlyPlayingAudio: false
     };
 
-    const apikey = "633c7d0d-5f29-413d-b11d-896ccd977dc8"
+    const apikey = ""
     // IndexedDB Manager
     const IndexedDBManager = {
         MAX_ENTRIES: 100000000,

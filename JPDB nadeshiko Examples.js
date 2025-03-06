@@ -12,11 +12,30 @@
 // @connect      linodeobjects.com
 // @grant        GM_addElement
 // @grant        GM_xmlhttpRequest
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_registerMenuCommand
 // @license      MIT
 // ==/UserScript==
 
 (function() {
     'use strict';
+    let apiKey = GM_getValue("nadeshiko-api-key", "")
+
+    // Register menu commands
+    GM_registerMenuCommand("Set API Key", async () => {
+        apiKey = fetchApiKey();
+    });
+
+    function fetchApiKey() {
+        let apiKey = prompt("A Nadeshiko API key is required for this extension to work.\n\nYou can get one for free here after creating an account: https://nadeshiko.co/settings/developer");
+        GM_setValue("nadeshiko-api-key", apiKey);
+
+        if (apiKey) {
+            alert("API Key saved successfully!");
+        }
+        return apiKey;
+    }
 
     const CONFIG = {
         IMAGE_WIDTH: '400px',
@@ -48,7 +67,6 @@
         currentlyPlayingAudio: false
     };
 
-    const apikey = ""
     // IndexedDB Manager
     const IndexedDBManager = {
         MAX_ENTRIES: 100000000,
@@ -241,13 +259,19 @@
                         resolve();
                     } else {
                         console.log(`Calling API for: ${searchVocab}`);
+                        if(!apiKey) {
+                            // Ask for API Key on search if not set to prevent 401 errors
+                            apiKey = fetchApiKey();
+                            if(!apiKey) return;
+                        }
+
                         GM_xmlhttpRequest({
                             method: "POST",
                             url: url,
                             data: JSON.stringify({ query: searchVocab }),
                             headers:
                             {
-                                "X-API-Key":apikey,
+                                "X-API-Key": apiKey,
                                 "Content-Type": "application/json"
                             },
                             onload: async function(response) {
@@ -1891,4 +1915,3 @@ setVocabSize();
 //preloadImages();
 
 })();
-

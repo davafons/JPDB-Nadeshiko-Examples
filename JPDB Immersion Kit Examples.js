@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         JPDB Immersion Kit Examples
-// @version      1.20
+// @version      1.21.3
 // @description  Embeds anime images & audio examples into JPDB review and vocabulary pages using Immersion Kit's API. Compatible only with TamperMonkey.
 // @author       awoo
 // @namespace    jpdb-immersion-kit-examples
@@ -23,6 +23,7 @@
     const CONFIG = {
         IMAGE_WIDTH: '400px',
         WIDE_MODE: true,
+        DEFINITIONS_ON_RIGHT_IN_WIDE_MODE: false,
         ARROW_WIDTH: '75px',
         ARROW_HEIGHT: '45px',
         PAGE_WIDTH: '75rem',
@@ -34,7 +35,10 @@
         AUTO_PLAY_SOUND: true,
         NUMBER_OF_PRELOADS: 1,
         VOCAB_SIZE: '250%',
-        MINIMUM_EXAMPLE_LENGTH: 0
+        MINIMUM_EXAMPLE_LENGTH: 0,
+        DEFAULT_TO_EXACT_SEARCH: true
+        // On changing this config option, the icons change but the sentences don't, so you
+        // have to click once to match up the icons and again to actually change the sentences
     };
 
     const state = {
@@ -50,6 +54,55 @@
         currentlyPlayingAudio: false
     };
 
+    // Prefixing
+    const scriptPrefix = 'JPDBImmersionKitExamples-';
+    const configPrefix = 'CONFIG.'; // additional prefix for config variables to go after the scriptPrefix
+    // do not change either of the above without adding code to handle the change
+
+    const setItem = (key, value) => { localStorage.setItem(scriptPrefix + key, value) }
+    const getItem = (key) => {
+        const prefixedValue = localStorage.getItem(scriptPrefix + key);
+        if (prefixedValue !== null) { return prefixedValue }
+        const nonPrefixedValue = localStorage.getItem(key);
+        // to move away from non-prefixed values as fast as possible
+        if (nonPrefixedValue !== null) { setItem(key, nonPrefixedValue) }
+        return nonPrefixedValue
+    }
+    const removeItem = (key) => {
+        localStorage.removeItem(scriptPrefix + key);
+        localStorage.removeItem(key)
+    }
+
+    // Helper for transitioning to fully script-prefixed config state
+    // Deletes all localStorage variables starting with configPrefix and re-adds them with scriptPrefix and configPrefix
+    // Danger of other scripts also having localStorage variables starting with configPrefix, so we add a flag showing that
+    // we have run this function and make sure it is not set when running it
+
+    // Check for Prefixed flag
+    if (localStorage.getItem(`JPDBImmersionKit*Examples-CONFIG_VARIABLES_PREFIXED`) !== 'true') {
+        const keysToModify = [];
+
+        // Collect keys that need to be modified
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key.startsWith(configPrefix)) {
+                keysToModify.push(key);
+            }
+        }
+
+        // Modify the collected keys
+        keysToModify.forEach((key) => {
+            const value = localStorage.getItem(key);
+            localStorage.removeItem(key);
+            const newKey = scriptPrefix + key;
+            localStorage.setItem(newKey, value);
+        });
+        // Set flag so this only runs once
+        // Flag has * in name to place at top in alphabetical sorting,
+        // and most importantly, to ensure the flag is never removed or modified
+        // by the other script functions that check for the script prefix
+        localStorage.setItem(`JPDBImmersionKit*Examples-CONFIG_VARIABLES_PREFIXED`, 'true');
+    }
 
     // IndexedDB Manager
     const IndexedDBManager = {
@@ -244,7 +297,7 @@
             const maxRetries = 5;
             let attempt = 0;
 
-            const storedValue = localStorage.getItem(state.vocab);
+            const storedValue = getItem(state.vocab);
             const isBlacklisted = storedValue && storedValue.split(',').length > 1 && parseInt(storedValue.split(',')[1], 10) === 2;
 
             // Return early if not blacklisted
@@ -343,7 +396,7 @@
     //FAVORITE DATA FUNCTIONS=====================================================================================================================
     function getStoredData(key) {
         // Retrieve the stored value from localStorage using the provided key
-        const storedValue = localStorage.getItem(key);
+        const storedValue = getItem(key);
 
         // If a stored value exists, split it into index and exactState
         if (storedValue) {
@@ -363,7 +416,7 @@
         const value = `${index},${exactState ? 1 : 0}`;
 
         // Store the value in localStorage using the provided key
-        localStorage.setItem(key, value);
+        setItem(key, value);
     }
 
 
@@ -387,27 +440,52 @@
     }
 
     function parseVocabFromReview() {
-        // Select the element with class 'kind' to determine the type of content
-        const kindElement = document.querySelector('.kind');
         console.log("Parsing Review Page");
 
-        // If kindElement doesn't exist, set kindText to ''
-        const kindText = kindElement ? kindElement.textContent.trim() : '';
+        // Select the element with class 'kind' to determine the type of content
+        const kindElement = document.querySelector('.kind');
 
-        // Accept 'Kanji', 'Vocabulary', or 'New' kindText
-        if (kindText !== 'Kanji' && kindText !== 'Vocabulary' && kindText !== 'New') return ''; // Return empty if it's neither kanji nor vocab
+        // If kindElement doesn't exist, set kindText to null
+        const kindText = kindElement ? kindElement.textContent.trim() : null;
 
-        if (kindText === 'Vocabulary' || kindText === 'New') {
+        // Accept 'Kanji' or 'Vocabulary' kindText
+        if (kindText !== 'Kanji' && kindText !== 'Vocabulary') {
+            console.log("Not Kanji or existing Vocabulary. Attempting to parse New Vocab.");
+
+            // Attempt to parse from <a> tag with specific pattern
+            const anchorElement = document.querySelector('a.plain[href*="/vocabulary/"]');
+
+            if (anchorElement) {
+                const href = anchorElement.getAttribute('href');
+
+                const match = href.match(/\/vocabulary\/\d+\/([^#]+)#a/);
+
+                if (match && match[1]) {
+                    const new_vocab = match[1];
+                    console.log("Found New Vocab:", new_vocab);
+                    return new_vocab;
+                }
+            }
+
+            console.log("No Vocabulary found.");
+            return '';
+        }
+
+        if (kindText === 'Vocabulary') {
             // Select the element with class 'plain' to extract vocabulary
             const plainElement = document.querySelector('.plain');
-            if (!plainElement) return '';
+            if (!plainElement) {
+                return '';
+            }
 
             let vocabulary = plainElement.textContent.trim();
+
             const nestedVocabularyElement = plainElement.querySelector('div:not([style])');
 
             if (nestedVocabularyElement) {
                 vocabulary = nestedVocabularyElement.textContent.trim();
             }
+
             const specificVocabularyElement = plainElement.querySelector('div:nth-child(3)');
 
             if (specificVocabularyElement) {
@@ -423,7 +501,9 @@
         } else if (kindText === 'Kanji') {
             // Select the hidden input element to extract kanji
             const hiddenInput = document.querySelector('input[name="c"]');
-            if (!hiddenInput) return '';
+            if (!hiddenInput) {
+                return '';
+            }
 
             const vocab = hiddenInput.value.split(',')[1];
             const kanjiRegex = /[\u4e00-\u9faf\u3400-\u4dbf]/;
@@ -432,6 +512,8 @@
                 return vocab;
             }
         }
+
+        console.log("No Vocabulary or Kanji found.");
         return '';
     }
 
@@ -495,6 +577,7 @@
         return '';
     }
 
+
     //EMBED FUNCTIONS=====================================================================================================================
     function createAnchor(marginLeft) {
         // Create and style an anchor element
@@ -534,17 +617,19 @@
         // Create a star button with an icon and click event for toggling favorite state
         const anchor = createAnchor('0.5rem');
         const starIcon = document.createElement('span');
-        const storedValue = localStorage.getItem(state.vocab);
+        const storedValue = getItem(state.vocab);
+        console.log(storedValue);
 
         // Determine the star icon (filled or empty) based on stored value
         if (storedValue) {
             const [storedIndex, storedExactState] = storedValue.split(',');
             const index = parseInt(storedIndex, 10);
-            const exactState = parseInt(storedExactState, 10);
+            const exactState = Boolean(parseInt(storedExactState, 10));
             starIcon.textContent = (state.currentExampleIndex === index && state.exactSearch === exactState) ? '★' : '☆';
         } else {
             starIcon.textContent = '☆';
         }
+
 
         // Style the star icon
         starIcon.style.fontSize = '1.4rem';
@@ -563,9 +648,8 @@
         return anchor;
     }
 
-
     function toggleStarState(starIcon) {
-        const storedValue = localStorage.getItem(state.vocab);
+        const storedValue = getItem(state.vocab);
         const isBlacklisted = storedValue && storedValue.split(',').length > 1 && parseInt(storedValue.split(',')[1], 10) === 2;
 
         // Return early if blacklisted
@@ -580,14 +664,14 @@
             const index = parseInt(storedIndex, 10);
             const exactState = storedExactState === '1';
             if (index === state.currentExampleIndex && exactState === state.exactSearch) {
-                localStorage.removeItem(state.vocab);
+                removeItem(state.vocab);
                 starIcon.textContent = '☆';
             } else {
-                localStorage.setItem(state.vocab, `${state.currentExampleIndex},${state.exactSearch ? 1 : 0}`);
+                setItem(state.vocab, `${state.currentExampleIndex},${state.exactSearch ? 1 : 0}`);
                 starIcon.textContent = '★';
             }
         } else {
-            localStorage.setItem(state.vocab, `${state.currentExampleIndex},${state.exactSearch ? 1 : 0}`);
+            setItem(state.vocab, `${state.currentExampleIndex},${state.exactSearch ? 1 : 0}`);
             starIcon.textContent = '★';
         }
     }
@@ -618,7 +702,7 @@
     }
 
     function toggleQuoteState(quoteIcon) {
-        const storedValue = localStorage.getItem(state.vocab);
+        const storedValue = getItem(state.vocab);
         const isBlacklisted = storedValue && storedValue.split(',').length > 1 && parseInt(storedValue.split(',')[1], 10) === 2;
 
         // Return early if blacklisted
@@ -791,7 +875,7 @@
         const sentence = example.sentence || null;
         const translation = example.translation || null;
         const deck_name = example.deck_name || null;
-        const storedValue = localStorage.getItem(state.vocab);
+        const storedValue = getItem(state.vocab);
         const isBlacklisted = storedValue && storedValue.split(',').length > 1 && parseInt(storedValue.split(',')[1], 10) === 2;
 
         // Remove any existing container
@@ -850,7 +934,6 @@
         }
     }
 
-
     function removeExistingContainer() {
         // Remove the existing container if it exists
         const existingContainer = document.getElementById('immersion-kit-container');
@@ -896,8 +979,8 @@
             alt: 'Embedded Image',
             title: titleText,
             style: `max-width: ${CONFIG.IMAGE_WIDTH}; margin-top: 10px; cursor: pointer;`
-    });
-}
+        });
+    }
 
     function highlightVocab(sentence, vocab) {
         // Highlight vocabulary in the sentence based on configuration
@@ -1059,8 +1142,13 @@
                 originalContentWrapper.appendChild(subsectionPitchAccent);
             }
 
-            wrapper.appendChild(originalContentWrapper);
-            wrapper.appendChild(containerDiv);
+            if (CONFIG.DEFINITIONS_ON_RIGHT_IN_WIDE_MODE) {
+                wrapper.appendChild(containerDiv);
+                wrapper.appendChild(originalContentWrapper);
+            } else {
+                wrapper.appendChild(originalContentWrapper);
+                wrapper.appendChild(containerDiv);
+            }
 
             if (vboxGap) {
                 const existingDynamicDiv = vboxGap.querySelector('#dynamic-content');
@@ -1096,9 +1184,7 @@
         const existingNavigationDiv = document.getElementById('immersion-kit-embed');
         if (existingNavigationDiv) existingNavigationDiv.remove();
 
-        const reviewUrlPattern = /https:\/\/jpdb\.io\/review(#a)?$/;
-
-        renderImageAndPlayAudio(state.vocab, !reviewUrlPattern.test(window.location.href));
+        renderImageAndPlayAudio(state.vocab, CONFIG.AUTO_PLAY_SOUND);
         preloadImages();
     }
 
@@ -1153,12 +1239,12 @@
     }
 
     function addBlacklist() {
-        localStorage.setItem(state.vocab, `0,2`);
+        setItem(state.vocab, `0,2`);
         location.reload();
     }
 
     function remBlacklist() {
-        localStorage.removeItem(state.vocab);
+        removeItem(state.vocab);
         location.reload();
     }
 
@@ -1166,8 +1252,12 @@
         const favorites = {};
         for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
-            if (!key.startsWith('CONFIG')) {
-                favorites[key] = localStorage.getItem(key);
+            if (key.startsWith(scriptPrefix)) {
+                const keyPrefixless = key.substring(scriptPrefix.length); // chop off the script prefix
+                if (!keyPrefixless.startsWith(configPrefix)) {
+                    favorites[keyPrefixless] = localStorage.getItem(key);
+                    // For backwards compatibility keep the exported keys prefixless
+                }
             }
         }
         const data = JSON.stringify(favorites, null, 2);
@@ -1183,7 +1273,7 @@
             try {
                 const favorites = JSON.parse(e.target.result);
                 for (const key in favorites) {
-                    localStorage.setItem(key, favorites[key]);
+                    setItem(key, favorites[key]);
                 }
                 alert('Favorites imported successfully!');
                 location.reload();
@@ -1422,7 +1512,7 @@
                     newMinimumExampleLength = value;
                 }
 
-                changes[`CONFIG.${key}`] = value + originalFormattedType;
+                changes[configPrefix + key] = value + originalFormattedType;
             }
         });
 
@@ -1435,7 +1525,7 @@
             async () => {
                 await IndexedDBManager.delete();
                 CONFIG.MINIMUM_EXAMPLE_LENGTH = newMinimumExampleLength;
-                localStorage.setItem('CONFIG.MINIMUM_EXAMPLE_LENGTH', newMinimumExampleLength);
+                setItem(`${configPrefix}MINIMUM_EXAMPLE_LENGTH`, newMinimumExampleLength);
                 applyChanges(changes);
                 clearNonConfigLocalStorage();
                 finalizeSaveConfig();
@@ -1452,7 +1542,7 @@
     function clearNonConfigLocalStorage() {
         for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
-            if (key && !key.startsWith('CONFIG')) {
+            if (key && key.startsWith(scriptPrefix) && !key.startsWith(scriptPrefix + configPrefix)) {
                 localStorage.removeItem(key);
                 i--; // Adjust index after removal
             }
@@ -1461,7 +1551,7 @@
 
     function applyChanges(changes) {
         for (const key in changes) {
-            localStorage.setItem(key, changes[key]);
+            setItem(key, changes[key]);
         }
     }
 
@@ -1482,7 +1572,7 @@
                 'This will reset all your settings to default. Are you sure?',
                 () => {
                     Object.keys(localStorage).forEach(key => {
-                        if (key.startsWith('CONFIG')) {
+                        if (key.startsWith(scriptPrefix + configPrefix)) { // Jai - edited as config variables are also script-prefixed now
                             localStorage.removeItem(key);
                         }
                     });
@@ -1512,7 +1602,7 @@
                 async () => {
                     await IndexedDBManager.delete();
                     Object.keys(localStorage).forEach(key => {
-                        if (!key.startsWith('CONFIG')) {
+                        if (key.startsWith(scriptPrefix) && !key.startsWith(scriptPrefix + configPrefix)) {
                             localStorage.removeItem(key);
                         }
                     });
@@ -1784,17 +1874,21 @@
 
     function loadConfig() {
         for (const key in localStorage) {
-            if (!localStorage.hasOwnProperty(key) || !key.startsWith('CONFIG.')) continue;
+            if (!key.startsWith(scriptPrefix + configPrefix) || !localStorage.hasOwnProperty(key)) {continue};
 
-            const configKey = key.substring('CONFIG.'.length);
-            if (!CONFIG.hasOwnProperty(configKey)) continue;
+            const configKey = key.substring((scriptPrefix + configPrefix).length); // chop off script prefix and config prefix
+            if (!CONFIG.hasOwnProperty(configKey)) {continue};
 
             const savedValue = localStorage.getItem(key);
-            if (savedValue === null) continue;
+            if (savedValue === null) {continue};
 
             const valueType = typeof CONFIG[configKey];
             if (valueType === 'boolean') {
                 CONFIG[configKey] = savedValue === 'true';
+                if (configKey === "DEFAULT_TO_EXACT_SEARCH") { state.exactSearch = CONFIG.DEFAULT_TO_EXACT_SEARCH }
+                // I wonder if this is the best way to do this...
+                // Probably not because we could just have a single variable to store both, but it would have to be in config and
+                // it would be a bit weird to have the program modifying config when the actual config settings aren't changing
             } else if (valueType === 'number') {
                 CONFIG[configKey] = parseFloat(savedValue);
             } else if (valueType === 'string') {
@@ -1844,9 +1938,7 @@
             getImmersionKitData(state.vocab, state.exactSearch)
                 .then(() => {
                 preloadImages();
-                if (!/https:\/\/jpdb\.io\/review(#a)?$/.test(url)) {
-                    embedImageAndPlayAudio();
-                }
+                embedImageAndPlayAudio();
             })
                 .catch(console.error);
         } else if (state.apiDataFetched) {
@@ -1885,18 +1977,18 @@
         // Append the new style to the document head
         document.head.appendChild(style);
     }
-observer.lastUrl = window.location.href;
-observer.observe(document, { subtree: true, childList: true });
+    observer.lastUrl = window.location.href;
+    observer.observe(document, { subtree: true, childList: true });
 
-// Add event listeners for page load and URL changes
-window.addEventListener('load', onPageLoad);
-window.addEventListener('popstate', onPageLoad);
-window.addEventListener('hashchange', onPageLoad);
+    // Add event listeners for page load and URL changes
+    window.addEventListener('load', onPageLoad);
+    window.addEventListener('popstate', onPageLoad);
+    window.addEventListener('hashchange', onPageLoad);
 
-// Initial configuration and preloading
-loadConfig();
-setPageWidth();
-setVocabSize();
-//preloadImages();
+    // Initial configuration and preloading
+    loadConfig();
+    setPageWidth();
+    setVocabSize();
+    //preloadImages();
 
 })();

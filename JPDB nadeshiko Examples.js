@@ -16,7 +16,8 @@
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
 // @license      MIT
-// @updateURL    https://greasyfork.org/en/scripts/529745-jpdb-nadeshiko-examples
+// @downloadURL https://update.greasyfork.org/scripts/529745/JPDB%20Nadeshiko%20Examples.user.js
+// @updateURL https://update.greasyfork.org/scripts/529745/JPDB%20Nadeshiko%20Examples.meta.js
 // ==/UserScript==
 
 (function() {

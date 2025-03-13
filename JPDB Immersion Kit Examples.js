@@ -1572,7 +1572,7 @@
                 'This will reset all your settings to default. Are you sure?',
                 () => {
                     Object.keys(localStorage).forEach(key => {
-                        if (key.startsWith(scriptPrefix + configPrefix)) { // Jai - edited as config variables are also script-prefixed now
+                        if (key.startsWith(scriptPrefix + configPrefix)) {
                             localStorage.removeItem(key);
                         }
                     });

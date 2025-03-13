@@ -618,7 +618,7 @@
         const anchor = createAnchor('0.5rem');
         const starIcon = document.createElement('span');
         const storedValue = getItem(state.vocab);
-        console.log(storedValue);
+        // console.log(storedValue);
 
         // Determine the star icon (filled or empty) based on stored value
         if (storedValue) {

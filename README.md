@@ -28,6 +28,7 @@ The settings menu (**☰**) allows customization of the script's behavior:
 
 - **Image Width** – Adjust image size.  
 - **Wide Mode** – Place image next to or above meanings.  
+- **Definitions on Right in Wide Mode** – Place image left and definitions right.  
 - **Arrow Width/Height** – Resize navigation arrows.  
 - **Page Width** – Adjust overall layout width.  
 - **Sound Volume** – Control audio playback volume.  
@@ -38,6 +39,7 @@ The settings menu (**☰**) allows customization of the script's behavior:
 - **Auto Play Sound** – Automatically play audio when changing examples.  
 - **Number of Preloads** – Set how many examples load in the background.  
 - **Vocab Size** – Adjust vocab text size in reviews.  
+- **Default to Exact Search** – Enables exact search option by default.  
 - **Minimum Example Length** – Set a lower limit for sentence length.  
   - **⚠ Warning:** Changing this **will delete all current favorites.**  
 - **Blacklist** – Prevent specific examples from appearing.  

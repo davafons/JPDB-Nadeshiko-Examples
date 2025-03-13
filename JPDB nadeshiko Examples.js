@@ -16,6 +16,7 @@
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
 // @license      MIT
+// @updateURL    https://greasyfork.org/en/scripts/529745-jpdb-nadeshiko-examples
 // ==/UserScript==
 
 (function() {

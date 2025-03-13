@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         JPDB Immersion Kit Examples
-// @version      1.21.3
+// @version      1.21.4
 // @description  Embeds anime images & audio examples into JPDB review and vocabulary pages using Immersion Kit's API. Compatible only with TamperMonkey.
 // @author       awoo
 // @namespace    jpdb-immersion-kit-examples
@@ -1121,11 +1121,13 @@
         const subsectionPitchAccent = document.querySelector('.subsection-pitch-accent');
         const subsectionLabels = document.querySelectorAll('h6.subsection-label');
         const vboxGap = document.querySelector('.vbox.gap');
+        const styleSheet = document.querySelector('link[rel="stylesheet"]').sheet;
 
         if (CONFIG.WIDE_MODE && subsectionMeanings) {
             const wrapper = document.createElement('div');
             wrapper.style.display = 'flex';
             wrapper.style.alignItems = 'flex-start';
+            styleSheet.insertRule('.subsection-meanings { max-width: none !important; }', styleSheet.cssRules.length);
 
             const originalContentWrapper = document.createElement('div');
             originalContentWrapper.style.flex = '1';

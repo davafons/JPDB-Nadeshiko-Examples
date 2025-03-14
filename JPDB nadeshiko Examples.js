@@ -236,7 +236,7 @@
 
 
         return new Promise(async (resolve, reject) => {
-            const searchVocab = vocab;
+            const searchVocab = exactSearch ? `"${vocab}"` : vocab;
             const url = `https://api.brigadasos.xyz/api/v1/search/media/sentence`;
             const maxRetries = 5;
             let attempt = 0;

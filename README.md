@@ -1,6 +1,6 @@
-# JPDB Immersion Kit Examples  
+# JPDB Nadeshiko Examples  
 
-A Tampermonkey userscript for **jpdb.io** that embeds anime examples from **ImmersionKit** directly into the site.  
+A Tampermonkey userscript for **jpdb.io** that embeds anime examples from **Nadeshiko** directly into the site.  
 
 ## Features  
 
@@ -46,7 +46,7 @@ The settings menu (**☰**) allows customization of the script's behavior:
 
 ## How It Works  
 
-The script searches **ImmersionKit** for examples based on the current vocabulary and embeds them into **jpdb.io**. Audio can be played manually or automatically.  
+The script searches **Nadeshiko** for examples based on the current vocabulary and embeds them into **jpdb.io**. Audio can be played manually or automatically.  
 
 ### **Audio Playback Note**  
 If autoplay doesn't work, check your browser's site settings (click the lock icon next to the URL) and allow automatic audio playback.  
@@ -57,10 +57,10 @@ Favorites allow you to pick a default example for a word. Next time the word app
 
 ## Links  
 
-- 📜 **GitHub Repository:** [https://github.com/AwooDesu/JPDB-Immersion-Kit-Examples](https://github.com/AwooDesu/JPDB-Immersion-Kit-Examples)  
-- 📥 **Download at Greasyfork:** [https://greasyfork.org/en/scripts/507408-jpdb-immersion-kit-examples](https://greasyfork.org/en/scripts/507408-jpdb-immersion-kit-examples)  
+- 📜 **GitHub Repository:** [https://github.com/Sacus1/JPDB-Nadeshiko-Examples](https://github.com/Sacus1/JPDB-Nadeshiko-Examples)  
+- 📥 **Download at Greasyfork:** [https://greasyfork.org/en/scripts/529745-jpdb-nadeshiko-examples](https://greasyfork.org/en/scripts/529745-jpdb-nadeshiko-examples)
 - 🛠 **JPDB Website:** [https://jpdb.io](https://jpdb.io)  
-- 🎞 **ImmersionKit:** [https://immersionkit.com](https://immersionkit.com)  
+- 🎞 **Nadeshiko:** [https://nadeshiko.co](https://nadeshiko.co)
 
 ## Contributing  
 

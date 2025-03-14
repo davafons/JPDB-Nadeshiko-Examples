@@ -1,24 +1,43 @@
 // ==UserScript==
-// @name         JPDB Immersion Kit Examples
+// @name         JPDB Nadeshiko Examples
 // @version      1.21.4
-// @description  Embeds anime images & audio examples into JPDB review and vocabulary pages using Immersion Kit's API. Compatible only with TamperMonkey.
+// @description  Embeds anime images & audio examples into JPDB review and vocabulary pages using Nadeshiko's API. Compatible only with TamperMonkey.
 // @author       awoo
-// @namespace    jpdb-immersion-kit-examples
+// @namespace    jpdb-nadeshiko-examples
 // @match        https://jpdb.io/review*
 // @match        https://jpdb.io/vocabulary/*
 // @match        https://jpdb.io/kanji/*
 // @match        https://jpdb.io/search*
-// @connect      immersionkit.com
+// @connect      api.brigadasos.xyz
 // @connect      linodeobjects.com
 // @grant        GM_addElement
 // @grant        GM_xmlhttpRequest
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_registerMenuCommand
 // @license      MIT
-// @downloadURL https://update.greasyfork.org/scripts/507408/JPDB%20Immersion%20Kit%20Examples.user.js
-// @updateURL https://update.greasyfork.org/scripts/507408/JPDB%20Immersion%20Kit%20Examples.meta.js
+// @downloadURL https://update.greasyfork.org/scripts/529745/JPDB%20Nadeshiko%20Examples.user.js
+// @updateURL https://update.greasyfork.org/scripts/529745/JPDB%20Nadeshiko%20Examples.meta.js
 // ==/UserScript==
 
 (function() {
     'use strict';
+    let apiKey = GM_getValue("nadeshiko-api-key", "")
+
+    // Register menu commands
+    GM_registerMenuCommand("Set API Key", async () => {
+        apiKey = fetchApiKey();
+    });
+
+    function fetchApiKey() {
+        let apiKey = prompt("A Nadeshiko API key is required for this extension to work.\n\nYou can get one for free here after creating an account: https://nadeshiko.co/settings/developer");
+        GM_setValue("nadeshiko-api-key", apiKey);
+
+        if (apiKey) {
+            alert("API Key saved successfully!");
+        }
+        return apiKey;
+    }
 
     const CONFIG = {
         IMAGE_WIDTH: '400px',
@@ -55,7 +74,7 @@
     };
 
     // Prefixing
-    const scriptPrefix = 'JPDBImmersionKitExamples-';
+    const scriptPrefix = 'JPDBNadeshikoExamples-';
     const configPrefix = 'CONFIG.'; // additional prefix for config variables to go after the scriptPrefix
     // do not change either of the above without adding code to handle the change
 
@@ -79,7 +98,7 @@
     // we have run this function and make sure it is not set when running it
 
     // Check for Prefixed flag
-    if (localStorage.getItem(`JPDBImmersionKit*Examples-CONFIG_VARIABLES_PREFIXED`) !== 'true') {
+    if (localStorage.getItem(`JPDBNadeshiko*Examples-CONFIG_VARIABLES_PREFIXED`) !== 'true') {
         const keysToModify = [];
 
         // Collect keys that need to be modified
@@ -101,7 +120,7 @@
         // Flag has * in name to place at top in alphabetical sorting,
         // and most importantly, to ensure the flag is never removed or modified
         // by the other script functions that check for the script prefix
-        localStorage.setItem(`JPDBImmersionKit*Examples-CONFIG_VARIABLES_PREFIXED`, 'true');
+        localStorage.setItem(`JPDBNadeshiko*Examples-CONFIG_VARIABLES_PREFIXED`, 'true');
     }
 
     // IndexedDB Manager
@@ -111,7 +130,7 @@
 
         open() {
             return new Promise((resolve, reject) => {
-                const request = indexedDB.open('ImmersionKitDB', 1);
+                const request = indexedDB.open('NadeshikoDB', 1);
                 request.onupgradeneeded = function(event) {
                     const db = event.target.result;
                     if (!db.objectStoreNames.contains('dataStore')) {
@@ -202,29 +221,8 @@
 
                     // Transform the JSON object to slim it down
                     let slimData = {};
-                    if (data && data.data) {
-                        slimData.data = data.data.map(item => {
-                            const slimItem = {};
-
-                            // Keep the category_count section
-                            if (item.category_count) {
-                                slimItem.category_count = item.category_count;
-                            }
-
-                            // Slim down the examples section
-                            if (item.examples && Array.isArray(item.examples)) {
-                                const slimExamples = item.examples.map(example => ({
-                                    image_url: example.image_url,
-                                    sound_url: example.sound_url,
-                                    sentence: example.sentence,
-                                    translation: example.translation,
-                                    deck_name: example.deck_name
-                                }));
-                                slimItem.examples = slimExamples;
-                            }
-
-                            return slimItem;
-                        });
+                    if (data) {
+                        slimData = data
                     } else {
                         console.error('Data does not contain expected structure. Cannot slim down.');
                         resolve();
@@ -269,7 +267,7 @@
 
         delete() {
             return new Promise((resolve, reject) => {
-                const request = indexedDB.deleteDatabase('ImmersionKitDB');
+                const request = indexedDB.deleteDatabase('NadeshikoDB');
                 request.onsuccess = function() {
                     console.log('IndexedDB deleted successfully');
                     resolve();
@@ -288,12 +286,12 @@
 
 
     // API FUNCTIONS=====================================================================================================================
-    function getImmersionKitData(vocab, exactSearch) {
+    function getNadeshikoData(vocab, exactSearch) {
 
 
         return new Promise(async (resolve, reject) => {
-            const searchVocab = exactSearch ? `「${vocab}」` : vocab;
-            const url = `https://api.immersionkit.com/look_up_dictionary?keyword=${encodeURIComponent(searchVocab)}&sort=shortness&min_length=${CONFIG.MINIMUM_EXAMPLE_LENGTH}`;
+            const searchVocab = exactSearch ? `"${vocab}"` : vocab;
+            const url = `https://api.brigadasos.xyz/api/v1/search/media/sentence`;
             const maxRetries = 5;
             let attempt = 0;
 
@@ -310,24 +308,36 @@
                 try {
                     const db = await IndexedDBManager.open();
                     const cachedData = await IndexedDBManager.get(db, searchVocab);
-                    if (cachedData && Array.isArray(cachedData.data) && cachedData.data.length > 0) {
+                    if (cachedData && Array.isArray(cachedData) && cachedData.length > 0) {
                         console.log('Data retrieved from IndexedDB');
-                        state.examples = cachedData.data[0].examples;
+                        state.examples = cachedData;
                         state.apiDataFetched = true;
                         resolve();
                     } else {
                         console.log(`Calling API for: ${searchVocab}`);
+                        if(!apiKey) {
+                            // Ask for API Key on search if not set to prevent 401 errors
+                            apiKey = fetchApiKey();
+                            if(!apiKey) return;
+                        }
+
                         GM_xmlhttpRequest({
-                            method: "GET",
+                            method: "POST",
                             url: url,
+                            data: JSON.stringify({ query: searchVocab }),
+                            headers:
+                            {
+                                "X-API-Key": apiKey,
+                                "Content-Type": "application/json"
+                            },
                             onload: async function(response) {
                                 if (response.status === 200) {
-                                    const jsonData = parseJSON(response.responseText);
+                                    const jsonData = parseJSON(response.response).sentences;
                                     console.log("API JSON Received");
                                     console.log(url);
                                     const validationError = validateApiResponse(jsonData);
                                     if (!validationError) {
-                                        state.examples = jsonData.data[0].examples;
+                                        state.examples = jsonData;
                                         state.apiDataFetched = true;
                                         await IndexedDBManager.save(db, searchVocab, jsonData);
                                         resolve();
@@ -335,7 +345,7 @@
                                         attempt++;
                                         if (attempt < maxRetries) {
                                             console.log(`Validation error: ${validationError}. Retrying... (${attempt}/${maxRetries})`);
-                                            setTimeout(fetchData, 2000); // Add a 2-second delay before retrying
+                                            setTimeout(fetchData, 5000); // Add a 5-second delay before retrying
                                         } else {
                                             reject(`Invalid API response after ${maxRetries} attempts: ${validationError}`);
                                             state.error = true;
@@ -374,17 +384,13 @@
         if (!jsonData) {
             return 'Not a valid JSON';
         }
-        if (!jsonData.data || !jsonData.data[0] || !jsonData.data[0].examples) {
-            return 'Missing required data fields';
-        }
-
-        const categoryCount = jsonData.data[0].category_count;
+        const categoryCount = jsonData.length;
         if (!categoryCount) {
             return 'Missing category count';
         }
 
         // Check if all category counts are zero
-        const allZero = Object.values(categoryCount).every(count => count === 0);
+        const allZero = categoryCount == 0
         if (allZero) {
             return 'Blank API';
         }
@@ -724,7 +730,7 @@
 
         state.apiDataFetched = false;
         embedImageAndPlayAudio();
-        getImmersionKitData(state.vocab, state.exactSearch)
+        getNadeshikoData(state.vocab, state.exactSearch)
             .then(() => {
             embedImageAndPlayAudio();
         })
@@ -758,14 +764,14 @@
     }
 
     function createTextButton(vocab, exact) {
-        // Create a text button for the Immersion Kit
+        // Create a text button for Nadeshiko
         const textButton = document.createElement('a');
-        textButton.textContent = 'Immersion Kit';
+        textButton.textContent = 'Nadeshiko';
         textButton.style.color = 'var(--subsection-label-color)';
         textButton.style.fontSize = '85%';
         textButton.style.marginRight = '0.5rem';
         textButton.style.verticalAlign = 'middle';
-        textButton.href = `https://www.immersionkit.com/dictionary?keyword=${encodeURIComponent(vocab)}&sort=shortness${exact ? '&exact=true' : ''}`;
+        textButton.href = `https://nadeshiko.co/search/sentence?query=${encodeURIComponent(vocab)}`;
         textButton.target = '_blank';
         return textButton;
     }
@@ -869,15 +875,20 @@
     }
 
     function renderImageAndPlayAudio(vocab, shouldAutoPlaySound) {
+        if (state.apiDataFetched == false){
+            console.log("No data");
+            return;
+        }
         const example = state.examples[state.currentExampleIndex] || {};
-        const imageUrl = example.image_url || null;
-        const soundUrl = example.sound_url || null;
-        const sentence = example.sentence || null;
-        const translation = example.translation || null;
-        const deck_name = example.deck_name || null;
+        const imageUrl = example.media_info.path_image || null;
+        const soundUrl = example.media_info.path_audio || null;
+        const sentence = example.segment_info.content_jp || null;
+        const translation = example.segment_info.content_en || null;
+        const deck_name = example.basic_info.name_anime_romaji || null;
         const storedValue = getItem(state.vocab);
         const isBlacklisted = storedValue && storedValue.split(',').length > 1 && parseInt(storedValue.split(',')[1], 10) === 2;
-
+        console.log("sentence",sentence);
+        console.log("translation",translation);
         // Remove any existing container
         removeExistingContainer();
         if (!shouldRenderContainer()) return;
@@ -912,7 +923,7 @@
             // Append sentence and translation or a placeholder text
             sentence ? appendSentenceAndTranslation(wrapperDiv, sentence, translation) : appendNoneText(wrapperDiv);
         } else if (state.error) {
-            wrapperDiv.appendChild(createTextElement('ERROR\nNO EXAMPLES FOUND\n\nRARE WORD OR\nIMMERSIONKIT API IS TEMPORARILY DOWN'));
+            wrapperDiv.appendChild(createTextElement('ERROR\nNO EXAMPLES FOUND\n\nRARE WORD OR\NADESHIKO API IS TEMPORARILY DOWN'));
         } else {
             wrapperDiv.appendChild(createTextElement('LOADING'));
         }
@@ -936,7 +947,7 @@
 
     function removeExistingContainer() {
         // Remove the existing container if it exists
-        const existingContainer = document.getElementById('immersion-kit-container');
+        const existingContainer = document.getElementById('nadeshiko-container');
         if (existingContainer) {
             existingContainer.remove();
         }
@@ -1033,7 +1044,7 @@
     function createNavigationDiv() {
         // Create and style the navigation div
         const navigationDiv = document.createElement('div');
-        navigationDiv.id = 'immersion-kit-embed';
+        navigationDiv.id = 'nadeshiko-embed';
         navigationDiv.style.display = 'flex';
         navigationDiv.style.justifyContent = 'center';
         navigationDiv.style.alignItems = 'center';
@@ -1095,7 +1106,7 @@
     function createContainerDiv(leftArrow, wrapperDiv, rightArrow, navigationDiv) {
         // Create and configure the main container div
         const containerDiv = document.createElement('div');
-        containerDiv.id = 'immersion-kit-container';
+        containerDiv.id = 'nadeshiko-container';
         containerDiv.style.display = 'flex';
         containerDiv.style.alignItems = 'center';
         containerDiv.style.justifyContent = 'center';
@@ -1183,10 +1194,12 @@
 
     function embedImageAndPlayAudio() {
         // Embed the image and play audio, removing existing navigation div if present
-        const existingNavigationDiv = document.getElementById('immersion-kit-embed');
+        const existingNavigationDiv = document.getElementById('nadeshiko-embed');
         if (existingNavigationDiv) existingNavigationDiv.remove();
 
-        renderImageAndPlayAudio(state.vocab, CONFIG.AUTO_PLAY_SOUND);
+        const reviewUrlPattern = /https:\/\/jpdb\.io\/review(#a)?$/;
+
+        renderImageAndPlayAudio(state.vocab, !reviewUrlPattern.test(window.location.href));
         preloadImages();
     }
 
@@ -1899,7 +1912,13 @@
         }
     }
 
-
+    function shuffle(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]]; // Swap elements
+        }
+        return array;
+    }
     //MAIN FUNCTIONS=====================================================================================================================
     function onPageLoad() {
         // Initialize state and determine vocabulary based on URL
@@ -1910,7 +1929,6 @@
 
         // Proceed only if the machine translation frame is not present
         if (!machineTranslationFrame) {
-
             //display embed for first time with loading text
             embedImageAndPlayAudio();
             setPageWidth();
@@ -1937,8 +1955,10 @@
 
         // Fetch data and embed image/audio if necessary
         if (state.vocab && !state.apiDataFetched) {
-            getImmersionKitData(state.vocab, state.exactSearch)
+            getNadeshikoData(state.vocab, state.exactSearch)
                 .then(() => {
+                state.examples = shuffle(state.examples)
+                console.log("PageLoad",state)
                 preloadImages();
                 embedImageAndPlayAudio();
             })

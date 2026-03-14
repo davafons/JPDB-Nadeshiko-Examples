@@ -9,8 +9,8 @@
 // @match        https://jpdb.io/kanji/*
 // @match        https://jpdb.io/search*
 // @match        https://jpdb.io/deck*
-// @connect      api.brigadasos.xyz
-// @connect 	sargus.fr
+// @connect      api.nadeshiko.co
+// @connect      cdn.nadeshiko.co
 // @grant        GM_addElement
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
@@ -25,7 +25,6 @@
 (function () {
     'use strict';
     let nadeshikoApiKey = GM_getValue("nadeshiko-api-key", "");
-    const apiBaseUrl = "http://sargus.fr:8000/api";
 
     // Register menu commands
     GM_registerMenuCommand("Set Nadeshiko API Key", async () => {
@@ -36,7 +35,7 @@
     });
 
     function fetchNadeshikoApiKey() {
-        let apiKey = prompt("A Nadeshiko API key is required for this extension to work.\n\nYou can get one for free here after creating an account: https://nadeshiko.co/settings/developer");
+        let apiKey = prompt("A Nadeshiko API key is required for this extension to work.\n\nYou can get one for free here after creating an account: https://nadeshiko.co/user/developer");
         GM_setValue("nadeshiko-api-key", apiKey);
 
         if (apiKey) {
@@ -164,7 +163,7 @@
                 request.onupgradeneeded = function (event) {
                     const db = event.target.result;
                     if (!db.objectStoreNames.contains('dataStore')) {
-                        db.createObjectStore('dataStore', {keyPath: 'keyword'});
+                        db.createObjectStore('dataStore', { keyPath: 'keyword' });
                     }
                 };
                 request.onsuccess = function (event) {
@@ -191,7 +190,7 @@
                             console.log(`Deleting entry for keyword "${keyword}" because it is expired.`);
                             await this.deleteEntry(db, keyword);
                             resolve(null);
-                        } else if (validationError && !keyword === 'jpdb-imported-data') {
+                        } else if (validationError && keyword !== 'jpdb-imported-data') {
                             console.error(`Deleting entry for keyword "${keyword}" due to validation error: ${validationError}`);
                             await this.deleteEntry(db, keyword);
                             resolve(null);
@@ -380,7 +379,7 @@
 
         return new Promise(async (resolve, reject) => {
             const searchVocab = exactSearch ? `"${vocab}"` : vocab;
-            const url = `https://api.brigadasos.xyz/api/v1/search/media/sentence`;
+            const url = `https://api.nadeshiko.co/v1/search`;
             const maxRetries = 2;
             let attempt = 0;
 
@@ -399,10 +398,14 @@
                         resolve();
                     } else {
                         const data = JSON.stringify({
-                            query: searchVocab,
-                            "limit": 50,
-                            "min_length": CONFIG.MINIMUM_EXAMPLE_LENGTH,
-                            "max_length": CONFIG.MAXIMUM_EXAMPLE_LENGTH
+                            query: { search: vocab, exactMatch: exactSearch },
+                            take: 50,
+                            filters: {
+                                segmentLengthChars: {
+                                    min: CONFIG.MINIMUM_EXAMPLE_LENGTH,
+                                    max: CONFIG.MAXIMUM_EXAMPLE_LENGTH
+                                }
+                            }
                         })
                         console.log(`Calling API for: ${searchVocab} with data ${data}`);
                         if (!nadeshikoApiKey) {
@@ -419,12 +422,20 @@
                             data: data,
                             headers:
                                 {
-                                    "X-API-Key": nadeshikoApiKey,
+                                    "Authorization": "Bearer " + nadeshikoApiKey,
                                     "Content-Type": "application/json"
                                 },
                             onload: async function (response) {
                                 if (response.status === 200) {
-                                    let jsonData = parseJSON(response.response).sentences;
+                                    const parsed = parseJSON(response.response);
+                                    let jsonData = parsed.segments.map(seg => {
+                                        const media = parsed.includes.media[seg.mediaPublicId];
+                                        seg.mediaName = media ? media.nameRomaji : null;
+                                        seg.furi_sentence = buildFuriSentence(seg.textJa?.tokens);
+                                        return seg;
+                                    });
+                                    console.log("API JSON Received");
+                                    console.log(url);
                                     const validationError = validateApiResponse(jsonData);
                                     if (!validationError) {
                                         state.apiDataFetched = true;
@@ -498,132 +509,60 @@
             return 'Blank API';
         }
 
+        // Reject old-format cache entries (pre-v2 API) so they are naturally evicted
+        if (jsonData[0] && jsonData[0].segment_info !== undefined) {
+            return 'Stale cache format';
+        }
+
         return null; // No error
     }
 
-    async function checkIfNames(sargusData) {
-        return await new Promise((resolve, reject) => {
-            GM_xmlhttpRequest({
-                method: "POST",
-                url: apiBaseUrl + "/check_names",
-                data: JSON.stringify(sargusData),
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                onload: function (response) {
-                    if (response.status === 200) {
-                        try {
-                            const names = JSON.parse(response.responseText);
-                            if (Array.isArray(names)) {
-                                resolve(names);
-                            } else {
-                                console.error("Invalid response format, expected an array:", names);
-                                reject(null);
-                            }
-                        } catch (e) {
-                            console.error("Error parsing response as JSON:", e);
-                            reject(null);
-                        }
-                    } else {
-                        console.error("Error checking if names :", response.responseText);
-                        reject(null);
-                    }
-                }
-            });
-        });
-    }
-
-    function katakanaToHiragana(str) {
-        const table = {'ア': 'あ', 'イ': 'い', 'ウ': 'う', 'エ': 'え', 'オ': 'お', 'カ': 'か', 'キ': 'き', 'ク': 'く', 'ケ': 'け', 'コ': 'こ', 'サ': 'さ', 'シ': 'し', 'ス': 'す', 'セ': 'せ', 'ソ': 'そ', 'タ': 'た', 'チ': 'ち', 'ツ': 'つ', 'テ': 'て', 'ト': 'と', 'ナ': 'な', 'ニ': 'に', 'ヌ': 'ぬ', 'ネ': 'ね', 'ノ': 'の', 'ハ': 'は', 'ヒ': 'ひ', 'フ': 'ふ', 'ヘ': 'へ', 'ホ': 'ほ', 'マ': 'ま', 'ミ': 'み', 'ム': 'む', 'メ': 'め', 'モ': 'も', 'ヤ': 'や', 'ユ': 'ゆ', 'ヨ': 'よ', 'ラ': 'ら', 'リ': 'り', 'ル': 'る', 'レ': 'れ', 'ロ': 'ろ', 'ワ': 'わ', 'ヲ': 'を', 'ン': 'ん', 'ァ': 'ぁ', 'ィ': 'ぃ', 'ゥ': 'ぅ', 'ェ': 'ぇ', 'ォ': 'ぉ', 'ャ': 'ゃ', 'ュ': 'ゅ', 'ョ': 'ょ', 'ヮ': 'ゎ', 'ッ': 'っ', 'ー': 'ー', 'ガ': 'が', 'ギ': 'ぎ', 'グ': 'ぐ', 'ゲ': 'げ', 'ゴ': 'ご', 'ザ': 'ざ', 'ジ': 'じ', 'ズ': 'ず', 'ゼ': 'ぜ', 'ゾ': 'ぞ', 'ダ': 'だ', 'ヂ': 'ぢ', 'ヅ': 'づ', 'デ': 'で', 'ド': 'ど', 'バ': 'ば', 'ビ': 'び', 'ブ': 'ぶ', 'ベ': 'べ', 'ボ': 'ぼ', 'パ': 'ぱ', 'ピ': 'ぴ', 'プ': 'ぷ', 'ペ': 'ぺ', 'ポ': 'ぽ', 'ヴ': 'ゔ'}
-        return str.split('').map(char => table[char] || char).join('');
+    function buildFuriSentence(tokens) {
+        if (!tokens || tokens.length === 0) return null;
+        const specialChars = ['ー', '、', '。', '─', '》', '《'];
+        return tokens.map(token => {
+            const reading = katakanaToHiragana(token.r) || '';
+            if (specialChars.includes(token.s) || !reading) {
+                return `<ruby>${token.s}</ruby>`;
+            }
+            return `<ruby>${token.s}<rt>${reading}</rt></ruby>`;
+        }).join('');
     }
 
     async function preprocessSentence(sentence, reading_ = state.reading, vocab_ = state.vocab) {
-        const content = sentence.segment_info.content_jp;
-        // Set weights for each sentence by calling checking jpdb history data
+        const content = sentence.textJa?.content;
         const db = await IndexedDBManager.open();
         let datas = (await IndexedDBManager.get(db, "jpdb-imported-data"));
         if (CONFIG.WEIGHTED_SENTENCES && datas && datas[0]) {
             datas = datas[0];
             let vocabInSentence = false;
-            await processJPDBData(sentence);
-
-            async function processJPDBData(sentence) {
-                return await new Promise((resolve) => {
-                    GM_xmlhttpRequest({
-                        method: "POST",
-                        url: apiBaseUrl + "/parse",
-                        data: JSON.stringify({
-                            "sentence": content,
-                        }),
-                        headers: {
-                            "Content-Type": "application/json"
-                        },
-                        onload: function (response) {
-                            let weight = 1;
-                            if (response.status === 200) {
-                                try {
-                                    const vocab = JSON.parse(response.responseText);
-                                    if (vocab.length > 0) {
-                                        let matchCount = 0;
-                                        let furi_sentence = ""
-                                        const difficulty = vocab[0].split(' ')[2];
-                                        for (const item of vocab) {
-                                            const spelling = item.split(' ')[0];
-                                            const reading = katakanaToHiragana(item.split(' ')[1]) || '';
-											const specialChars = ['ー', '、', '。','─','》','《']; // extend as needed
-											  if (specialChars.includes(spelling)) {
-											    furi_sentence += `<ruby>${spelling}</ruby>`;
-											  } else {
-											    furi_sentence += `<ruby>${spelling}<rt>${reading}</rt></ruby>`;
-											  }
-                                            vocabInSentence = true;
-                                            if (!reading_) {
-                                                vocabInSentence = true;
-                                            } else if (spelling && reading && (spelling.includes(vocab_) && reading.includes(reading_))) {
-                                                vocabInSentence = true;
-                                            }
-                                            if (datas && datas[`${spelling}|${reading}`] !== undefined) {
-                                                matchCount += datas[`${spelling}|${reading}`];
-                                            }
-                                        }
-                                        sentence.furi_sentence = furi_sentence;
-                                        // increase weight when ratio of matched vocab to total vocab is high and reduce when difficuly is high
-                                        weight = Math.min(1, matchCount / vocab.length);
-                                        weight = Math.min(1, weight * (1 - (parseInt(difficulty) / 10)));
-                                        console.log(`Sentence "${content}" has weight: ${weight.toFixed(2)} based on ${matchCount} matches out of ${vocab.length} vocab items with difficulty ${difficulty}.`);
-                                    }
-                                    else {
-                                        console.error("Error parsing parse response, got empty vocab array :", response.responseText);
-                                        sentence.weight = -10
-                                    }
-                                } catch (e) {
-                                    console.error("Error parsing parse response, got :",response.responseText, e);
-                                }
-                            }
-                            else {
-                                console.error("Error parsing parse response :", response.responseText);
-                            }
-                            sentence.weight = weight;
-                            resolve();
-                        },
-                        onerror: function () {
-                            sentence.weight = 1;
-                            resolve();
-                        }
-                    });
-                });
+            const tokens = sentence.textJa?.tokens;
+            if (tokens && tokens.length > 0) {
+                let matchCount = 0;
+                for (const token of tokens) {
+                    const spelling = token.s;
+                    const reading = katakanaToHiragana(token.r) || '';
+                    if (!reading_) {
+                        vocabInSentence = true;
+                    } else if (spelling && reading && (spelling.includes(vocab_) || reading.includes(reading_))) {
+                        vocabInSentence = true;
+                    }
+                    if (datas && datas[`${spelling}|${reading}`] !== undefined) {
+                        matchCount += datas[`${spelling}|${reading}`];
+                    }
+                }
+                sentence.weight = Math.min(1, matchCount / tokens.length);
+            } else {
+                vocabInSentence = !reading_ || content?.includes(vocab_);
+                sentence.weight = 1;
             }
-
-            // if vocabInSentence is false, remove sentence from the examples
             if (!vocabInSentence) {
                 console.log(`Skipping sentence "${content}" because it does not contain the vocab "${vocab_}" or reading "${reading_}".`);
                 return null;
             }
-        }
-        else {
+        } else {
             sentence.weight = 1;
-            console.log(`Skipping sentence "${content} because ${CONFIG.WEIGHTED_SENTENCES ? "no JPDB data found" : "weighting is disabled"}."`);
+            console.log(`Skipping sentence weighting for "${content} because ${CONFIG.WEIGHTED_SENTENCES ? "no JPDB data found" : "weighting is disabled"}."`);
         }
         return sentence;
     }
@@ -1016,13 +955,13 @@
             return;
         }
         const example = state.examples[state.currentExampleIndex] || {};
-        const imageUrl = example.media_info?.path_image || null;
-        const soundUrl = example.media_info?.path_audio || null;
-        const sentence = example.segment_info?.content_jp || null;
-        const translation = example.segment_info?.content_en || "";
+        const imageUrl = example.urls ? example.urls.imageUrl : null;
+        const soundUrl = example.urls ? example.urls.audioUrl : null;
+        const sentence = example.textJa ? example.textJa.content : null;
+        const translation = example.textEn ? example.textEn.content : null;
         const sentence_furi = example.furi_sentence || sentence;
-        const deck_name = example.basic_info?.name_anime_romaji || "Unknown Anime";
-        console.log(sentence,state.isFront)
+        const deck_name = example.mediaName || "Unknown Anime";
+        console.log(sentence, state.isFront)
         // Update sentence class content with actual sentence text
         const sentenceElement = document.querySelector('.sentence');
         if (sentenceElement) {
@@ -1054,22 +993,23 @@
         } else {
             const answerBox = document.querySelector('.answer-box');
             if (answerBox) {
-                // create div style="display: flex; justify-content: center;"
                 const sentenceDiv = document.createElement('div');
                 sentenceDiv.style.display = 'flex';
                 sentenceDiv.style.justifyContent = 'center';
                 let content;
-                 if ((state.isFront && CONFIG.FURIGANA_ON_FRONT_SIDE) || (!state.isFront && CONFIG.FURIGANA_ON_BACKSIDE)) {
-                     content = sentence_furi;
-                 } else {
-                     content = sentence;
-                 }
+                if ((state.isFront && CONFIG.FURIGANA_ON_FRONT_SIDE) || (!state.isFront && CONFIG.FURIGANA_ON_BACKSIDE)) {
+                    content = sentence_furi;
+                } else {
+                    content = sentence;
+                }
                 sentenceDiv.innerHTML = `<div style="display: flex;"><div style="display: flex; flex-direction: column;"><div style="display: flex; align-items: baseline; column-gap: 0.25rem;" class="card-sentence"><div class="sentence" style="margin-left: 0.3rem;">${content}</div><a class="icon-link" href="/edit-shown-sentence?v=1168870&amp;s=3448502455&amp;r=1858493110&amp;origin=%2Freview%3Fc%3Dvf%2C1168870%2C3448502455%26r%3D2"><i class="ti ti-pencil"></i></a></div><div style="display: flex;justify-content: center;"><div class="sentence-translation blur" style="" onclick="this.classList.remove('blur');" onmouseover="this.classList.remove('blur');">${translation}</div></div></div></div>`;
                 answerBox.appendChild(sentenceDiv);
-
             }
         }
-
+        const storedValue = getItem(state.vocab);
+        const isBlacklisted = storedValue && storedValue.split(',').length > 1 && parseInt(storedValue.split(',')[1], 10) === 2;
+        console.log("sentence", sentence);
+        console.log("translation", translation);
         // Remove any existing container
         removeExistingContainer();
         if (!shouldRenderContainer()) {
@@ -1188,7 +1128,7 @@
         // Create and return an image element with specified attributes
         const searchVocab = exactSearch ? `「${vocab}」` : vocab;
         const example = state.examples[state.currentExampleIndex] || {};
-        const deck_name = example.basic_info.name_anime_romaji || null;
+        const deck_name = example.mediaName || null;
 
         // Extract the file name from the URL
         let file_name = imageUrl.substring(imageUrl.lastIndexOf('/') + 1);
@@ -1378,8 +1318,8 @@
         const endIndex = Math.min(state.examples.length - 1, state.currentExampleIndex + CONFIG.NUMBER_OF_PRELOADS);
 
         for (let i = startIndex; i <= endIndex; i++) {
-            if (!state.preloadedIndices.has(i) && state.examples[i].image_url) {
-                GM_addElement(preloadDiv, 'img', {src: state.examples[i].image_url});
+            if (!state.preloadedIndices.has(i) && state.examples[i].urls && state.examples[i].urls.imageUrl) {
+                GM_addElement(preloadDiv, 'img', {src: state.examples[i].urls.imageUrl});
                 state.preloadedIndices.add(i);
             }
         }
@@ -2239,7 +2179,7 @@
             removeRtFromDOM(sentenceElement)
             const defaultSentence = sentenceElement.textContent.trim();
             if (defaultSentence) {
-                state.examples = [{segment_info: {content_jp: defaultSentence}}];
+                state.examples = [{textJa: {content: defaultSentence}}];
             }
             sentenceElement.textContent = "Waiting for data...";
         }

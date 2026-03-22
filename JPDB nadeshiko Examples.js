@@ -1015,7 +1015,9 @@
         if (!CONFIG.COLORED_SENTENCE_TEXT || !text) return text;
         if (highlight) {
             // Use API-provided highlight, replacing <em> with colored span
-            return highlight.replace(/<em>(.*?)<\/em>/g, '<span style="color: #3d81ff;">$1</span>');
+            return highlight
+                .replace(/<em>(.*?)<\/em>/g, '<span style="color: #3d81ff;">$1</span>')
+                .replace(/<\/?mark>/g, '');
         }
         return text;
     }

@@ -160,7 +160,7 @@
                 request.onupgradeneeded = function (event) {
                     const db = event.target.result;
                     if (!db.objectStoreNames.contains('dataStore')) {
-                        db.createObjectStore('dataStore', { keyPath: 'keyword' });
+                        db.createObjectStore('dataStore', {keyPath: 'keyword'});
                     }
                 };
                 request.onsuccess = function (event) {
@@ -375,7 +375,6 @@
 
 
         return new Promise(async (resolve, reject) => {
-            const searchVocab = vocab;
             const url = `https://api.nadeshiko.co/v1/search`;
             const maxRetries = 2;
             let attempt = 0;
@@ -383,7 +382,7 @@
             async function fetchData() {
                 try {
                     const db = await IndexedDBManager.open();
-                    const cachedDatas = await IndexedDBManager.get(db, searchVocab);
+                    const cachedDatas = await IndexedDBManager.get(db, vocab);
                     if (cachedDatas && Array.isArray(cachedDatas)) {
                         const timestamp = cachedDatas[1]
                         const cachedData = cachedDatas[0]
@@ -404,7 +403,7 @@
                                 }
                             }
                         })
-                        console.log(`Calling API for: ${searchVocab} with data ${data}`);
+                        console.log(`Calling API for: ${vocab} with data ${data}`);
                         if (!nadeshikoApiKey) {
                             // Ask for API Key on search if not set to prevent 401 errors
                             nadeshikoApiKey = fetchNadeshikoApiKey();
@@ -430,8 +429,6 @@
                                         seg.mediaName = media ? media.nameRomaji : null;
                                         return seg;
                                     });
-                                    console.log("API JSON Received");
-                                    console.log(url);
                                     const validationError = validateApiResponse(jsonData);
                                     if (!validationError) {
                                         state.apiDataFetched = true;
@@ -950,65 +947,65 @@
     }
 
     function playAudio(soundUrl) {
-        if (!soundUrl) return;
+        if (soundUrl) {
+            stopCurrentAudio();
+            state.currentlyPlayingAudio = true;
+            const generation = ++state.audioGeneration;
 
-        stopCurrentAudio();
-        state.currentlyPlayingAudio = true;
-        const generation = ++state.audioGeneration;
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: soundUrl,
+                responseType: 'arraybuffer',
+                onload: function (response) {
+                    // Discard if a newer playAudio call was made while fetching
+                    if (generation !== state.audioGeneration) return;
 
-        GM_xmlhttpRequest({
-            method: 'GET',
-            url: soundUrl,
-            responseType: 'arraybuffer',
-            onload: function (response) {
-                // Discard if a newer playAudio call was made while fetching
-                if (generation !== state.audioGeneration) return;
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    const audioContext = new AudioContext();
+                    audioContext.decodeAudioData(response.response, function (buffer) {
+                        // Discard if a newer playAudio call was made while decoding
+                        if (generation !== state.audioGeneration) {
+                            audioContext.close();
+                            return;
+                        }
 
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                const audioContext = new AudioContext();
-                audioContext.decodeAudioData(response.response, function (buffer) {
-                    // Discard if a newer playAudio call was made while decoding
-                    if (generation !== state.audioGeneration) {
-                        audioContext.close();
-                        return;
-                    }
+                        const source = audioContext.createBufferSource();
+                        source.buffer = buffer;
 
-                    const source = audioContext.createBufferSource();
-                    source.buffer = buffer;
+                        const gainNode = audioContext.createGain();
 
-                    const gainNode = audioContext.createGain();
+                        // Connect the source to the gain node and the gain node to the destination
+                        source.connect(gainNode);
+                        gainNode.connect(audioContext.destination);
 
-                    // Connect the source to the gain node and the gain node to the destination
-                    source.connect(gainNode);
-                    gainNode.connect(audioContext.destination);
+                        // Mute the first part and then ramp up the volume
+                        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+                        gainNode.gain.linearRampToValueAtTime(CONFIG.SOUND_VOLUME / 100, audioContext.currentTime + 0.1);
 
-                    // Mute the first part and then ramp up the volume
-                    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-                    gainNode.gain.linearRampToValueAtTime(CONFIG.SOUND_VOLUME / 100, audioContext.currentTime + 0.1);
+                        // Play the audio, skip the first part to avoid any "pop"
+                        source.start(0, 0.05);
 
-                    // Play the audio, skip the first part to avoid any "pop"
-                    source.start(0, 0.05);
+                        // Save the current audio context and source for stopping later
+                        state.currentAudio = {
+                            context: audioContext,
+                            source: source
+                        };
 
-                    // Save the current audio context and source for stopping later
-                    state.currentAudio = {
-                        context: audioContext,
-                        source: source
-                    };
-
-                    // Set currentlyPlayingAudio to false when the audio ends
-                    source.onended = function () {
+                        // Set currentlyPlayingAudio to false when the audio ends
+                        source.onended = function () {
+                            state.currentlyPlayingAudio = false;
+                        };
+                    }, function (error) {
+                        console.error('Error decoding audio:', error);
                         state.currentlyPlayingAudio = false;
-                    };
-                }, function (error) {
-                    console.error('Error decoding audio:', error);
+                    });
+                },
+                onerror: function (error) {
+                    console.error('Error fetching audio:', error);
                     state.currentlyPlayingAudio = false;
-                });
-            },
-            onerror: function (error) {
-                console.error('Error fetching audio:', error);
-                state.currentlyPlayingAudio = false;
-            }
-        });
+                }
+            });
+        }
     }
 
     // has to be declared (referenced in multiple functions but definition requires variables local to one function)
@@ -1056,7 +1053,7 @@
         const translation = example.textEn ? example.textEn.content : null;
         const sentence_furi = example.furi_sentence || sentence;
         const deck_name = example.mediaName || "Unknown Anime";
-        console.log(sentence, state.isFront)
+        console.log(sentence,state.isFront)
         // Add Nadeshiko speaker icon to the left of the sentence
         const existingSpeakerIcon = document.getElementById('nadeshiko-speaker');
         if (existingSpeakerIcon) existingSpeakerIcon.remove();
@@ -1162,8 +1159,6 @@
         }
         const storedValue = getItem(state.vocab);
         const isBlacklisted = storedValue && storedValue.split(',').length > 1 && parseInt(storedValue.split(',')[1], 10) === 2;
-        console.log("sentence", sentence);
-        console.log("translation", translation);
         // Remove any existing container
         removeExistingContainer();
         if (!shouldRenderContainer()) {
@@ -1192,6 +1187,9 @@
                 imageLink.href = `https://nadeshiko.co/sentence/${example.publicId}`;
                 imageLink.target = '_blank';
                 imageLink.style.border = '0';
+                imageLink.style.display = 'block';
+                imageLink.style.width = '100%';
+                imageLink.style.height = '100%';
                 imageContainer.appendChild(imageLink);
                 createImageElement(imageLink, imageUrl, vocab);
             } else {
@@ -1320,7 +1318,8 @@
         container.style.alignItems = 'center';
         container.style.justifyContent = 'center';
         container.style.margin = '0 auto';
-        container.style.marginBottom = '10px';
+        container.style.marginBottom = '4px';
+        container.style.overflow = 'hidden';
         container.style.border = '1px solid rgba(128, 128, 128, 0.3)';
         container.style.borderRadius = '4px';
         return container;
@@ -1344,7 +1343,7 @@
             src: imageUrl,
             alt: 'Embedded Image',
             title: titleText,
-            style: `max-width: ${CONFIG.IMAGE_WIDTH}; cursor: pointer;`
+            style: `width: 100%; height: 100%; object-fit: cover; cursor: pointer;`
         });
     }
 
@@ -1365,6 +1364,14 @@
         const leftArrow = document.createElement('button');
         leftArrow.textContent = '<';
         leftArrow.style.marginRight = '10px';
+        leftArrow.style.width = CONFIG.ARROW_WIDTH;
+        leftArrow.style.height = CONFIG.ARROW_HEIGHT;
+        leftArrow.style.lineHeight = '25px';
+        leftArrow.style.textAlign = 'center';
+        leftArrow.style.display = 'flex';
+        leftArrow.style.justifyContent = 'center';
+        leftArrow.style.alignItems = 'center';
+        leftArrow.style.padding = '0'; // Remove padding
         leftArrow.disabled = state.currentExampleIndex === 0;
         leftArrow.addEventListener('click', () => {
             if (state.currentExampleIndex > 0) {
@@ -1381,6 +1388,14 @@
         const rightArrow = document.createElement('button');
         rightArrow.textContent = '>';
         rightArrow.style.marginLeft = '10px';
+        rightArrow.style.width = CONFIG.ARROW_WIDTH;
+        rightArrow.style.height = CONFIG.ARROW_HEIGHT;
+        rightArrow.style.lineHeight = '25px';
+        rightArrow.style.textAlign = 'center';
+        rightArrow.style.display = 'flex';
+        rightArrow.style.justifyContent = 'center';
+        rightArrow.style.alignItems = 'center';
+        rightArrow.style.padding = '0'; // Remove padding
         rightArrow.disabled = state.currentExampleIndex >= state.examples.length - 1;
         rightArrow.addEventListener('click', () => {
             if (state.currentExampleIndex < state.examples.length - 1) {
@@ -2497,8 +2512,8 @@
         style.type = 'text/css';
         style.textContent = `
 	            .answer-box > .plain {
-	                font-size: ${CONFIG.VOCAB_SIZE} !important;
-	                padding-bottom: 0.1rem !important;
+	                font-size: ${CONFIG.VOCAB_SIZE} !important; /* Use the configurable font size */
+	                padding-bottom: 0.1rem !important; /* Retain padding */
 	            }
 	            .card-sentence {
 	                justify-content: center;
